@@ -1,0 +1,2 @@
+#export(PlotExon, PlotExonCI, fetchdata, PlotExonResultsCI, PlotExonResults, MissingExons, RunExonModelWorkflow,RunQVals, getAllTranscripts)
+exportPattern("^[^\\.]")

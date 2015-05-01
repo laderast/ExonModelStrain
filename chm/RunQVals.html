@@ -1,0 +1,96 @@
+<html><head><title>Run qvalue on a resultframe</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<link rel="stylesheet" type="text/css" href="Rchm.css">
+</head>
+<body>
+
+<table width="100%"><tr><td>RunQVals(ExonModelStrain)</td><td align="right">R Documentation</td></tr></table><object type="application/x-oleobject" classid="clsid:1e2a7bd0-dab9-11d0-b93a-00c04fc99f9e">
+<param name="keyword" value="R:   RunQVals">
+<param name="keyword" value=" Run qvalue on a resultframe">
+</object>
+
+
+<h2>Run qvalue on a resultframe</h2>
+
+
+<h3>Description</h3>
+
+<p>
+For a resultframe produced by <code>RunExonModelWorkflow</code>, produce a new
+resultframe containing qvalues (FDR adjusted pvalues).
+</p>
+
+
+<h3>Usage</h3>
+
+<pre>
+  RunQVals(resultframe)
+</pre>
+
+
+<h3>Arguments</h3>
+
+<table summary="R argblock">
+<tr valign="top"><td><code>resultframe</code></td>
+<td>
+Valid resultframe (either multi or singles) produced from <code>RunExonModelWorkflow</code>.  
+</td></tr>
+</table>
+
+<h3>Details</h3>
+
+<p>
+<code>RunQVals</code> produces a dataframe that also contains the qvalues.  
+</p>
+<p>
+Note that if <code>qvalue</code> cannot produce qvalues for that set of pvalues, the function 
+will return a column of NAs for that set of pvalues, as well as the warning from qvalues.
+</p>
+
+
+<h3>See Also</h3>
+
+<p>
+<code><a href="RunExonModelWorkflow.html">RunExonModelWorkflow</a></code>
+<code><a onclick="findlink('qvalue', 'qvalue.html')" style="text-decoration: underline; color: blue; cursor: hand">qvalue</a></code>
+</p>
+
+
+<h3>Examples</h3>
+
+<pre>
+  #mouseexonensembl.db package required
+  #load in sample dataset
+  data(exontestdata)
+  #show output of RunExonModelWorkflow
+  multi[1:5]
+  output &lt;- RunQVals(multi)
+  output
+
+  ##not run
+  ##usually, would run with the output of RunExonModelWorkflow as below:
+  ##results &lt;- RunExonModelWorkflow(TestSetTrans, testTrans, dBPackage="mouseexonensembl.db")
+  ##this example will not work - not enough pvalues to build a distribution 
+  ##9 out of the 20 transcripts are multiple-exon transcripts
+  ##run on trx with multiple exons
+  ##mult &lt;- RunQVals(results$multi)
+  ##mult
+  ##run on trx with single exons
+  ##singles &lt;- RunQVals(results$single)
+  ##singles
+</pre>
+
+<script Language="JScript">
+function findlink(pkg, fn) {
+var Y, link;
+Y = location.href.lastIndexOf("\\") + 1;
+link = location.href.substring(0, Y);
+link = link + "../../" + pkg + "/chtml/" + pkg + ".chm::/" + fn;
+location.href = link;
+}
+</script>
+
+
+<hr><div align="center">[Package <em>ExonModelStrain</em> version 0.2 <a href="00Index.html">Index]</a></div>
+
+</body></html>

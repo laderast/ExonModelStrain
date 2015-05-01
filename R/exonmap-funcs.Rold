@@ -1,0 +1,165 @@
+getAllGenes <- function(subset="core"){
+  con <- exonmap:::.xmap.get.con(subset)
+  test <- exonmap:::.xmap.call(NULL, "xmap_AllGenes", con=con)
+  genes <- test$stable_id
+  genes
+}
+
+getAllTranscripts <- function(subset="core") {
+  genes <- getAllGenes(subset=subset)
+  trxs <- gene.to.transcript(genes)
+  trxs
+}
+
+getAllPredictionTranscripts <- function(subset="core") {
+
+  con <- exonmap:::.xmap.get.con(subset)
+  test <- exonmap:::.xmap.call(NULL, "xmap_predictionTranscripts", con=con)
+  genes <- test$display_label
+  genes <- as.numeric(sub("GENSCAN0+", "",genes, perl=TRUE))
+  genes
+}
+  
+getTranscriptInfo <- function(trxid, subset="core", noOverhang, uniqueTargets, remove.na=T){
+
+if(is.numeric(trxid)){
+  subset <- "prediction" }
+  
+exons <- transcript.to.exon(trxid, subset=subset)
+
+exonvec <- NULL
+probesetvec <- NULL
+
+
+  for(j in 1:length(exons)){
+   res <- exon.to.probeset(exons[j], subset = subset)
+   #print(res)
+
+
+   if(length(res) > 0){
+   exonvec <- c(exonvec,rep(exons[j], length(res)))
+   probesetvec <- c(probesetvec, res)
+   }
+
+   if(!remove.na){
+        exonvec <- c(exonvec, exons[j])
+         probesetvec <- c(probesetvec, NA)
+      }
+ }
+
+
+   if(any(subset == c("core","est"))){
+   gen <- transcript.to.gene(trxid)  
+   }
+
+   else{
+     pad <- 11 - nchar(trxid)
+     pad <- paste(rep(0,pad), collapse="")
+     trxid <- paste("GENSCAN", pad, trxid, sep="")
+     gen <- trxid     
+   }
+
+   #genvec <- rep(gen, length(probesetvec))
+   tranvec <- rep(trxid, length(probesetvec))
+
+   #print(genvec)
+   #print(tranvec)
+   #print(exonvec)
+   #print(probesetvec)
+
+if(any(is.null(exonvec), is.null(probesetvec))){
+   ##return null data.frame here
+  out <- NULL
+}
+
+else{
+   out <- data.frame(tranvec, exonvec, probesetvec)
+   colnames(out) <- c("transid", "EnsemblExonID", "ProbesetID") 
+ }
+
+out
+   
+}
+
+
+getExonLocationsTranscript <- function(trId, orderByStrand=FALSE, subset="core", noOverhang, uniqueTargets){
+   exons <- transcript.to.exon(trId, subset=subset)
+   exoninfo <- exon.details(exons)
+
+   exoninfo <- exoninfo[exoninfo$transcript_stable_id == trId,]
+   start <- exoninfo$seq_region_start
+   strand <- exoninfo$seq_region_strand
+   result <- data.frame(exons, start, strand)
+   colnames(result) <- c("EnsemblExonID", "ExonStart", "Strand")
+
+   if (orderByStrand) {
+    if (result$Strand[1] == -1) {
+        result <- result[order(result$ExonStart, decreasing = TRUE),]
+       }
+    }
+   
+   result
+ }
+
+
+getGeneSym <- function(Id) {
+
+#dbconnobj <- mouseConnect()
+  
+if(length(grep("G",Id)==1)){
+ info <- gene.details(Id)
+}
+if(length(grep("T",Id)==1)){
+ info <- transcript.details(Id)
+}
+
+result <- info$display_label
+
+result <- as.character(result)
+
+result 
+
+}
+
+
+annotateResults <- function(resultsframe) {
+
+       testid <- resultsframe[1,1]
+
+
+       #print(testid)
+	if(length(grep("G",testid))==1){
+          genes <- as.character(resultsframe[,1])   
+          outframe <- gene.details(as.character(genes))
+          cols <- c("display_label", "name", "seq_region_start", "seq_region_end", "biotype")
+          outframe[,cols]
+          dbres <- data.frame(genes, outframe)
+          colnames(dbres) <- c("EnsemblGeneID", "sym", "chr", "TrStart", "TrEnd", "Biotype") 
+          #sql <- paste("select DISTINCT EnsemblGeneID, sym, chr, TrStart, TrEnd from probe2ensembl;")
+	 }
+      if(length(grep("T",testid))==1){
+          trxs <- as.character(resultsframe[,1])
+          
+          outframe <- transcript.details(trxs)
+
+          genes <- NULL
+          for(tr in trxs){
+             g <- transcript.to.gene(tr)
+             genes <- c(genes, g)
+           }
+             
+          cols <- c("display_label", "name", "seq_region_start", "seq_region_end", "biotype")
+          outframe <- outframe[,cols]
+          dbres <- data.frame(trxs, genes, outframe)
+          #print(dbres)
+          colnames(dbres) <- c("EnsemblTranscriptID","EnsemblGeneID", "sym", "chr", "TrStart", "TrEnd", "Biotype") 
+       #sql <- paste("select DISTINCT EnsemblTranscriptID, EnsemblGeneID, sym, chr, TrStart, TrEnd from probe2ensembl;")
+       }
+	#print(sql)
+ 
+       #dbres <- dbGetQuery(dbconnobj, sql)
+	res <- merge(dbres, resultsframe, by=1)
+  #mouseDisconnect(dbconnobj)
+  
+	 return(res)
+}

@@ -1,0 +1,179 @@
+<html><head><title>Run Exon Model</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<link rel="stylesheet" type="text/css" href="Rchm.css">
+</head>
+<body>
+
+<table width="100%"><tr><td>RunExonModelWorkflow(ExonModelStrain)</td><td align="right">R Documentation</td></tr></table><object type="application/x-oleobject" classid="clsid:1e2a7bd0-dab9-11d0-b93a-00c04fc99f9e">
+<param name="keyword" value="R:   RunExonModelWorkflow">
+<param name="keyword" value=" Run Exon Model">
+</object>
+
+
+<h2>Run Exon Model</h2>
+
+
+<h3>Description</h3>
+
+<p>
+Run Strain Specific Exon Modeling
+</p>
+
+
+<h3>Usage</h3>
+
+<pre>
+  RunExonModelWorkflow(ExpSet,idlist=ExpSet,idlist = NULL,analysisType="transcript",dBPackage = "mouseexonensembl.db")
+  RunExonModelWorkflow(ExpSet,idlist=NULL)
+  RunExonModelWorkflow(ExpSet,analysisType="gene") 
+</pre>
+
+
+<h3>Arguments</h3>
+
+<table summary="R argblock">
+<tr valign="top"><td><code>ExpSet</code></td>
+<td>
+ExpressionSet containing probeset-level Exon Expression Data.  Currently, only
+Mouse Exon 1.0 data is supported.  The ExpressionSet phenoData should contain a
+column called 'Strain' where the two strains are coded 1 and 2.
+</td></tr>
+<tr valign="top"><td><code>idlist</code></td>
+<td>
+Character Vector containing a list of valid Ensembl Transcript or Gene IDs.  
+Note a list of all Transcript or Gene IDs can be queried from the database 
+package by using getAllTranscripts() or getAllGenes().
+<br>
+if idlist is NULL, then based on analysisType, the function will use 
+getAllTranscripts() or getAllGenes() to obtain a valid gene list.
+</td></tr>
+<tr valign="top"><td><code>analysisType</code></td>
+<td>
+Character value, must be either "transcript" (for transcript-level analysis)
+or "gene" (gene-level analysis).
+</td></tr>
+<tr valign="top"><td><code>dbPackage</code></td>
+<td>
+Name of database package containing Ensembl-Exon Array mapping (currently only 
+mouseexonensembl.db exists).
+</td></tr>
+</table>
+
+<h3>Details</h3>
+
+<p>
+Given an ExpressionSet of core expression values for an Affymetrix Exon array, 
+RunExonWorkflow will attempt to model the expression data using one of two models.
+</p>
+<p>
+For a multiple-exon transcript/gene, the following model is used.
+</p>
+<p>
+<i>Expression ~ Strain + Exon + Subject in Strain + Exon:Strain </i>
+</p>
+<p>
+for a single-exon, the model reduces to:
+</p>
+<p>
+<i>Expression ~ Strain + Subject in Strain </i>
+</p>
+<p>
+For a given Ensembl transcript or gene ID, the function will attempt to gather the information
+for all probesets with associated Exons, and subset the ExpressionSet, producing a data frame
+appropriate for analysis.  The appropriate exon model is then run, and the location and
+identity of the exon with maximum strain difference is returned, along with the appropriate 
+raw p-values for that model as well as other flags and metrics (see section below).
+</p>
+<p>
+We strongly suggest the use of a FDR based method such as qvalue to adjust the 
+raw p-values for multiple comparisons before further analysis.
+</p>
+
+
+<h3>Value</h3>
+
+<p>
+<code>RunExonModelWorkflow</code> returns a list with the following objects:
+</p>
+<table summary="R argblock">
+<tr valign="top"><td><code>multi</code></td>
+<td>
+data frame that contains the following columns:
+<dt>ID</dt><dd>Ensembl IDs - for gene level analysis, these are Ensembl Gene IDs.  For
+transcript-level analysis, these are Ensembl Transcript IDs.</dd>
+<dt>pvals</dt><dd>Three columns corresponding to the raw pvalues for
+Exon, Strain, Exon:Strain.</dd>
+<dt>means</dt><dd>Strain specific expression means (summarized at either transcript/gene
+level)</dd>
+<dt>modelflag</dt><dd>flag that indicates whether there are multiple probesets per exon.
+0 = 1 probeset per exon, 1 = at least 1 probeset has multiple probesets per exon.
+Useful in further stratifying the analysis.</dd>
+<dt>maxexon</dt><dd>Ensemble Exon ID for that corresponds to the maximum exon difference
+between the two strains.</dd>
+<dt>maxexondelta</dt><dd>absolute value of the max exon expression difference between the two strains</dd>
+<dt>position</dt><dd>position in transcript of maximum exon.  Note that for gene-level analysis,
+multiple exons for multiple transcripts may be mapped and thus this column may have no
+real meaning. </dd>
+<dt>positionflag</dt><dd>flag indicating position of maximum exon difference - 1 = beginning of
+transcript (1st exon), 2 = end of transcript (final exon), 0 = middle of transcript. </dd>
+<dt>numexonsmapped</dt><dd>Number of exons mapped in current data set for transcript/gene.  
+Note that this is different than the true number of exons for that transcript/gene.</dd>
+<dt>trueexonnum</dt><dd>True number of exons for transcript.</dd>
+<dt>strand</dt><dd>Strand (either -1 or 1) of transcript/gene.</dd>
+</td></tr>
+<tr valign="top"><td><code>singles</code></td>
+<td>
+data frame that contains the following columns for single-exon transcripts:
+<dt>ID</dt><dd>Identical to above.</dd>
+<dt>pvals</dt><dd>Single pvalue corresponding to strain-specific differences.  Note that
+for single-exon transcripts, a slightly different model is run.</dd>
+<dt>means</dt><dd>Identical to above.</dd>
+<dt>res$numPrsetsSingleExon</dt><dd>Number of probesets mapped for single-exon.  Useful for
+further stratifying the analysis.</dd>
+<dt>maxexon</dt><dd>Identical to above.  Obviously, for a single exon transcript, this corresponds
+to the single exon.</dd>
+<dt>maxexondelta</dt><dd>Identical to above.</dd>
+<dt>numexonsmapped</dt><dd>Identical to above.  Obviously, this value is 1 for single-exon</dd>
+<dt>trueexonnum</dt><dd>True number of exons per transcript.  For single-exon transcripts,
+this may not necessarily be 1, as the transcript may have multiple exons, but only
+1 exon is mapped to the data.</dd>
+<dt>strand</dt><dd>identical to above.</dd>
+<br>
+</td></tr>
+<tr valign="top"><td><code>notrun</code></td>
+<td>
+Character vector containing those ids that were not run. This
+usually is because the corresponding probeset values for that transcript
+do not exist in the ExpressionSet (due to masking or other reasons). </td></tr>
+</table>
+
+<h3>See Also</h3>
+
+<p>
+<code><a href="PlotExon.html">PlotExon</a></code>
+</p>
+
+
+<h3>Examples</h3>
+
+<pre>
+  #mouseexonensembl.db package required
+  library(mouseexonensembl.db)
+  #load in sample dataset
+  data(exontestdata)
+  #show list of Transcript IDs
+  testTrans
+  results &lt;- RunExonModelWorkflow(TestSetTrans, testTrans, dBPackage="mouseexonensembl.db")
+  #9 out of the 20 transcripts are multiple-exon transcripts
+  results$multi
+  #5 single-exon results in test set
+  results$singles
+  #some transcripts are not run
+  results$notrun
+</pre>
+
+
+
+<hr><div align="center">[Package <em>ExonModelStrain</em> version 0.1.2 <a href="00Index.html">Index]</a></div>
+
+</body></html>

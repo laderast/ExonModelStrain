@@ -1,0 +1,87 @@
+<html><head><title>Find exons for a transcript/gene that are not mapped to the dataset</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<link rel="stylesheet" type="text/css" href="Rchm.css">
+</head>
+<body>
+
+<table width="100%"><tr><td>MissingExons(ExonModelStrain)</td><td align="right">R Documentation</td></tr></table><object type="application/x-oleobject" classid="clsid:1e2a7bd0-dab9-11d0-b93a-00c04fc99f9e">
+<param name="keyword" value="R:   MissingExons">
+<param name="keyword" value=" Find exons for a transcript/gene that are not mapped to the dataset">
+</object>
+
+
+<h2>Find exons for a transcript/gene that are not mapped to the dataset</h2>
+
+
+<h3>Description</h3>
+
+<p>
+For a given transcript, or gene id, return all Ensembl Exon IDs that do not have
+mapped probesets.
+</p>
+
+
+<h3>Usage</h3>
+
+<pre>
+  MissingExons(id,ExpSet,dBPackage="mouseexonensembl.db")
+  MissingExons(id,ExpSet)
+</pre>
+
+
+<h3>Arguments</h3>
+
+<table summary="R argblock">
+<tr valign="top"><td><code>id</code></td>
+<td>
+Valid Ensembl Transcript or Gene ID.  
+<br>
+Note a list of all valid Transcript or Gene IDs can be queried from the database 
+package by using getAllTranscripts() or getAllGenes().
+</td></tr>
+<tr valign="top"><td><code>ExpSet</code></td>
+<td>
+ExpressionSet containing probeset-level Exon Expression Data.  Currently, only
+Mouse Exon 1.0 data is supported.  The ExpressionSet slot phenoData should contain a
+column called 'Strain' where the two strains are coded 1 and 2.
+</td></tr>
+<tr valign="top"><td><code>dbPackage</code></td>
+<td>
+Name of database package containing Ensembl-Exon Array mapping (currently only 
+mouseexonensembl.db exists).
+</td></tr>
+</table>
+
+<h3>Details</h3>
+
+<p>
+<code>MissingExons</code> produces a list of Ensembl Exon IDs not mapped to the current
+Expression Set. This may be for two reasons: either the Exon ID does not have any
+probesets mapped to it, or these probesets do not exist in the current ExpressionSet
+(perhaps due to SNP masking, etc).
+</p>
+<p>
+If all existing Exons are mapped, <code>MissingExons</code> returns a NULL value.
+</p>
+
+
+<h3>See Also</h3>
+
+<p>
+<code><a href="RunExonModelWorkflow.html">RunExonModelWorkflow</a></code>
+</p>
+
+
+<h3>Examples</h3>
+
+<pre>
+  data(exontestdata)
+  res &lt;- MissingExons("ENSMUST00000062893",TestSetTrans)
+  print(res)
+</pre>
+
+
+
+<hr><div align="center">[Package <em>ExonModelStrain</em> version 0.2 <a href="00Index.html">Index]</a></div>
+
+</body></html>

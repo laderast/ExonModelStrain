@@ -1,0 +1,323 @@
+%\VignetteIndexEntry{exon modeling primer}
+%\VignetteKeywords{Analysis, Affymetrix, exon array}
+%\VignetteDepends{affy, DBI, RSQLite, mouseexonensembl.db, qvalue, Biobase}
+%\VignettePackage{ExonModelStrain}
+\documentclass[12pt]{article}
+
+\usepackage{hyperref}
+\usepackage{amsmath,amssymb,geometry,textcomp}
+
+\textwidth=6.2in
+\textheight=8.5in
+%\parskip=.3cm
+\oddsidemargin=.1in
+\evensidemargin=.1in
+\headheight=-.3in
+
+\newcommand{\scscst}{\scriptscriptstyle}
+\newcommand{\scst}{\scriptstyle}
+
+\newcommand{\Rfunction}[1]{{\texttt{#1}}}
+\newcommand{\Robject}[1]{{\texttt{#1}}}
+\newcommand{\Rpackage}[1]{{\textit{#1}}}
+\newcommand{\Rclass}[1]{{\textit{#1}}}
+
+\begin{document}
+\title{ExonModelStrain: simple linear modeling to detect exon-specific strain 
+differences in Affymetrix Exon Array data}
+\author{Ted Laderas}
+
+\maketitle
+\tableofcontents
+
+\section{Introduction}
+
+The package \Rpackage{ExonModelStrain} applies two linear models to Affymetrix Exon Array data in order to detect exon-specific differences in expression between two strains.  Currently, only Mouse Exon Array 1.0 core probesets are supported.
+
+The first linear model applies to multiple-exon transcripts.  For a given transcript or gene, we fit the following linear model:
+
+
+Expression \= Strain + Exon + Subject\%in\%Strain + Exon\:Strain
+
+
+Note the Exon:Strain interaction term.  For a single exon, the model reduces to:
+
+
+Expression \= Strain + Subject\%in\%Strain
+
+
+\Rpackage{ExonModelStrain} applies ANOVA to the fit linear models in an attempt to detect differential alternative splicing between strains.  In the case of a multiple-exon
+transcript, we are interested in finding significant p-values for the interaction term
+Exon\:Strain.  In this case, expression is significantly different between the two strains for one or more exons.
+
+\Rpackage{ExonModelStrain} also provides tools and metrics based on the Expression Data that allow for filtering and stratification such as the position of the exon with the largest expression difference between strains as well as visualization of the interaction plots between the two strains.
+
+\section{Implementation Details}
+
+In order to achieve this, an Ensembl-Exon Array mapping (\Rpackage{mouseexonensembl.db}) was built, mapping 
+Ensembl Transcript IDs, Gene IDs, and Exon IDs to probeset boundaries.  A probeset was mapped to a particular 
+entity (exon, transcript, etc) if either the start or end of that probeset was within the boundary of that entity.  
+Note that the mapping is many-to-many: that is, a probeset may be a member of 
+multiple exons, due to transcriptional structure (for example, two separate 
+transcripts belonging to a gene may contain slightly different but overlapping 
+exons).
+
+Note this approach is similar to that taken by the \Rpackage{exonmap} project.
+However, our database package differs in that we only map exonic (not intronic)
+regions, and in implementation (we use a SQLite based database rather than a MySQL
+based database).  The current version of ExonModelStrain allows the user to connect
+with exonmap database installations (Mouse, Human, and Rat) in order to utilize their
+updated mapping.  For more details on installing exonmap, please refer to the
+\Rpackage{exonmap} documentation.
+
+
+\section{Preprocessing Exon Array Data}
+
+\Rpackage{ExonModelStrain} uses as input an ExpressionSet and a list of 
+Ensembl Transcript or Gene IDs to do the analysis.  It also requires a phenoData
+object that contains a column called table.
+
+Exon Array CEL files can be loaded by \Rfunction{ReadAffy}, Normalized and Summarized using 
+current Bioconductor tools (use of the annotation packages available at 
+\url{http://xmap.picr.man.ac.uk/download/} are recommended.  We do recommend SNP masking
+any SNPs that are different between the two strains.  For large datasets and computers 
+with limited memory, use of the \Rpackage{aroma.affymetrix} is suggested.
+
+The following script will preprocess, normalize, SNP mask and produce probeset-level 
+summaries for a set of CEL files in the current working directory. 
+
+(Note that the \Rfunction{ReadExon} function from the \Rpackage{exonmap} could also be used as well, 
+provided that an annotation file called {\it covdesc} exists in the working directory.  This
+file should be a space delimited file with a line for each array, and a column called Strain
+where each sample is labeled either 1 or 2. For more details, please refer to \Rpackage{exonmap}.)
+
+<<eval=FALSE>>=
+library(mouseexonpmcdf)
+library(mouseexonensembl.db)
+library(affy)
+
+#Read CEL files in current working directory
+raw.data <- ReadAffy()
+#change cdf filename
+raw.data@cdfName <- "mouseexonpmcdf"
+
+abatch1 <- bg.correct.rma(raw.data)
+abatch2 <- normalize.AffyBatch.quantiles(abatch1)
+
+#masking function
+mask3 <- function(x, maskfile="b6vsd2snpmask.txt"){
+   mask <- read.delim(maskfile)
+   probes <- mask[,2]
+   intensity(x)[probes,] <- NA
+   return(x)
+}
+
+abatch3 <- mask3(abatch2)
+
+eset <- computeExprSet(abatch3, pmcorrect="pmonly",
+      summary.method="medianpolish", 
+      summary.param=list(na.rm=TRUE))
+
+library(convert)
+eset <- as(eset, "ExpressionSet")
+
+coreprobesets <- getCoreProbesets()
+
+eset <- eset[coreprobesets,]
+@
+
+\section{Attaching phenoData to the ExpressionSet} 
+
+To this data file, we need to attach an appropriate phenoData file.  This file is 
+an annotation file where each sample is represented and the strain is annotated.  This 
+annotation file called {\it covdesc} should exists in the working directory.  This
+file should be a space delimited file with a line for each array, and a column called strain
+where each sample is labeled either 1 or 2. For more details, please refer to \Rpackage{exonmap}.)
+
+<<eval=FALSE>>=
+pData <- read.delim("covdesc")
+
+phen <- new("AnnotatedDataFrame", data = pData)
+
+phenoData(eset) <- phen
+@
+
+Alternatively, we can also build a data frame directly in R, based on the sample names.  
+For example, say the first ten samples correspond to strain 1 and the next 10 samples 
+correspond to strain 2.
+
+<<eval=FALSE>>=
+n <- sampleNames(eset)
+#equivalent to c(1,1,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,2,2)
+Strain <- c(rep(1,10), rep(2,10))
+
+names(Strain) <- n
+pData <- as.data.frame(Strain)
+
+phen <- new("AnnotatedDataFrame", data = pData)
+
+phenoData(eset) <- phen
+@
+
+\section{Connecting/Disconnecting to a Mapping Database}
+
+Currently, two databases mapping ensembl transcripts to Exon probesets are supported by 
+the \Rpackage{ExonModelStrain} package: \Rpackage{mouseexonenesmbl.db}, a portable SQLite
+database and \Rpackage{exonmap}, a MySQL database available at: (http://xmap.picr.man.ac.uk/)
+Note that a local installation of the Xmap database is highly recommended, as \Rpackage{ExonModelStrain}
+makes many queries of the database.
+
+We will connect to the \Rpackage{mouseexonenesmbl.db} database in our example using the following
+
+<<results=hide>>=
+#load library
+library(ExonModelStrain)
+mapConnect(dbPackage="mouseexonensembl.db")
+@ 
+
+In order to connect to the Xmap database, you would instead use the following lines.  dbName is derived
+from the name of the database that is setup when you specify a databases.txt file in your home directory.
+
+<<eval=FALSE>>=
+#load library
+library(ExonModelStrain)
+mapConnect(dbPackage= "xmapcore", dbName="mouse")
+@ 
+
+Note that if you would like to switch databases, first disconnect from the previous database by using
+\Rfunction{mapDisconnect} and then connect to the new database using \Rfunction{mapConnect}.
+
+
+\section{Analysing the Expression Set for Differential Exon Expression}
+
+Now that we have an appropriate ExpressionSet and we are connected to a database mapping, the Core 
+Expression probesets can now be analysed for  differential exon expression using 
+\Rfunction{RunExonModelWorkflow}.
+
+First we examine the list of Transcript IDs.
+
+<<eval=TRUE>>=
+# Loads a small example ExpressionSet (TestDataTrans)
+# And a small list of Transcript IDs (testTrans)
+data(exontestdata)
+testTrans
+@
+
+Now we run the model on the 20 transcripts.  \Rfunction{RunExonModelStrain} is smart enough to know
+to run the single-exon model on single-exon transcripts, and the multiple-exon model on multiple-exon
+transcripts.
+
+<<eval=TRUE>>=
+results <- RunExonModelWorkflow(TestSetTrans, testTrans)
+#9 out of the 20 transcripts are multiple-exon transcripts
+multres <- results$multi
+multres
+@
+
+We can also look at the single exon results.
+
+<<eval=TRUE>>=
+#no single-exon results in test set
+sing <- results$singles
+sing
+@
+
+Finally, we can get a list of those transcripts that were not modeled.  These 
+transcripts may not have the representative probesets that exist in our data.
+
+<<eval=TRUE>>=
+results$notrun
+@ 
+
+
+\section{Running the Probeset-Level Model}
+
+For datasets that require higher sensitivity in the comparison of AEU events, a 
+probeset-level model is also supplied. This model uses the following formula:
+
+Expression \= Strain + Probeset + Subject\%in\%Strain + Probeset\:Strain
+
+<<eval=FALSE>>=
+results2 <- RunExonModelWorkflow(TestSetTrans, testTrans, analysisUnit="probeset")
+@
+
+Note that \Rfunction{PlotExonResults} also has the option of specifying the analysisUnit,
+which will plot the interaction plot sorted 5' to 3' by probeset.  The Ensembl Exon ID is also
+appended to the probeset name under the plot.
+
+<<eval=FALSE>>=
+PlotExonResults(results2, analysisUnit="probeset")
+@
+
+\section{Adjusting for Multiple Comparisons}
+
+A convenience function, \Rfunction{RunQVals} is provided to adjust the p-values for multiple comparison.  
+\Rfunction{RunQVals} utilizes the \Rpackage{qvalue} in order to adjust the p-values for False Discovery 
+Rate (FDR).  In our example, qvalue cannot estimate the pi0 term of the raw Exon p-values (because there
+are so few transcripts in our example) and thus returns a null column for the qvalues.
+
+<<eval=TRUE>>=
+multqv <- RunQVals(multres)
+multqv
+@
+
+\section{Filtering the Result Sets}
+
+Say we are interested in finding Strain-specific Exon interactions.  We can find possible interactions by filtering our resulting dataframe.
+
+<<eval=TRUE>>=
+attach(multqv)
+sig <- multqv[qExonStrain<0.05,]
+detach(multqv)
+sig
+@
+
+Here we see two transcripts with significant exon/strain interaction terms.
+
+There are other flags that exist in the resulting data frame that can be used to further stratify/filter the data. 
+For example, \Rfunction{multprobeflag} is a flag that indicates whether there is at least one exon 
+in the transcript that has multiple mapped probesets.  \Rfunction{missingexonflag} indicates whether
+there are exons in the transcript that are not mapped to the data.  \Rfunction{MissingExons} will return
+a list of exons not currently mapped to the data.
+
+For more details, refer to \Rfunction{RunExonModelWorkflow}.
+
+\section{Plotting the Result Sets}
+
+We have two possible transcripts with exon/strain interactions.  We should now examine the 
+interaction plots to see whether these exon specific differences.
+
+Note that these plots may not be representative of all exons in a transcript.  That is,
+if no probesets exist in the ExpressionSet that map to an exon, that exon is not
+represented in the graph.  To get a list of missing exons for a transcript, please refer to
+\Rfunction{MissingExons}.
+
+There are two ways to plot these results.  The first is to plot by id.
+
+<<eval=FALSE>>=
+PlotExon("ENSMUST00000079776", ExpSet=TestSetTrans)
+@
+
+\includegraphics{example.png}
+
+Note the large expression difference between the two strains at Exon ENMUSE00000125970.
+
+Or, if we have a large number of significant results, we can save the plots in the working directory
+for later examination.  These plots are named automatically, by gene symbol + ID (for example, 
+
+<<eval=TRUE>>=
+PlotExonResults(sig, ExpSet=TestSetTrans, savePlot=TRUE)
+@
+
+For probeset-level modeling, the option to plot by probeset-level is also provided:
+<<eval=TRUE>>=
+PlotExonResults(sig, ExpSet=TestSetTrans, savePlot=TRUE, analysisUnit="probeset")
+@
+
+\end{document}
+
+
+
+
+
+

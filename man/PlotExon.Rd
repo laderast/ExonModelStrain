@@ -1,0 +1,94 @@
+\name{PlotExonResults}
+\alias{PlotExon}
+\alias{PlotExonCI}
+\alias{PlotExonResults}
+\alias{PlotExonResultsCI}
+\title{Plot Strain Interaction Plots for Exon Array Data}
+\description{Two functions for plotting Exon Array Data.}
+
+\usage{
+  PlotExonResults(resultsframe,ExpSet,dBPackage="mouseexonensembl.db")
+  PlotExonResultsCI(resultsframe,ExpSet,dbPackage="mouseexonensembl.db")
+  PlotExon(id, ExpSet, display=TRUE, savePlot=FALSE)
+  PlotExon(id, ExpSet, display=FALSE, savePlot=TRUE)
+  PlotExon(id, ExpSet)
+  PlotExonCI(id, ExpSet, display=FALS, savePlot=TRUE)
+}
+
+\arguments{
+  \item{ExpSet}{
+    ExpressionSet containing probeset-level Exon Expression Data.  Currently, only
+    Mouse Exon 1.0 data is supported.  The ExpressionSet phenoData should contain a
+    column called 'Strain' where the two strains are coded 1 and 2.
+    }
+  \item{id}{
+    Valid Ensembl Transcript or Gene ID.  
+    
+    Note a list of all valid Transcript or Gene IDs can be queried from the database 
+    package by using getAllTranscripts() or getAllGenes().
+  }
+    \item{resultsframe}{
+    Data frame (produced by RunExonModelWorkflow) where there first column contains 
+    a list of valid Ensembl Transcript or Gene IDs.  
+    
+    Note a list of all valid Transcript or Gene IDs can be queried from the database 
+    package by using getAllTranscripts() or getAllGenes().
+    }
+  \item{dbPackage}{
+    Name of database package containing Ensembl-Exon Array mapping (currently only 
+    mouseexonensembl.db exists).
+    }
+  \item{savePlot}{
+     Boolean. If true, the \code{PlotExon} will save the plot in the current working directory.
+     The name the function will output the name and location for the graphics
+     file.
+    }
+  \item{display}{
+     Boolean. If true, the \code{PlotExon} will save the plot in the current working directory.
+     The name the function will output the name and location for the graphics
+     file.
+    }
+ 
+}
+
+\details{
+   \code{PlotExon} produces an interaction plot (in PNG format) for a given Ensembl 
+   Transcript/Gene ID.  This plot may either be saved to disk in the current working 
+   directory. \code{PlotExonCI} produces a similar plot, but with error bars.  The plots are named automatically using the following convention: 
+
+   "gene symbol" + "ID" + "exon.plot.png"
+
+   \code{PlotExonResults} produces interaction plots for a data frame of results produced
+    by \code{RunExonModelWorkflow}.  \code{PlotExonResultsCI} is
+    similar, but produces interaction plots with error bars.  Each point in the plot consists of the mean expression of
+    all probesets for a particular exon for that strain.
+
+    Note that both \code{PlotExonResults} and \code{PlotExon} only plots Exons which have 
+    probesets that exist in the current ExpressionSet, so that Exons that are not represented 
+    in the data are not shown.  A list of Missing Exons can be found for a particular 
+    transcript/gene ID by using \code{MissingExons}.
+}
+
+\seealso{
+  \code{\link{RunExonModelWorkflow}}
+  \code{\link{MissingExons}}
+}
+
+\examples{
+##not run
+  #mouseexonensembl.db package required for example
+  #load in sample dataset
+  data(exontestdata)
+  testTrans
+  results <- RunExonModelWorkflow(TestSetTrans, testTrans, dBPackage="mouseexonensembl.db")
+  #9 out of the 20 transcripts are multiple-exon transcripts
+  results$multi
+  return
+  ##PlotExonResults(results$multi[1:5,], ExpSet=TestSetTrans)
+}
+
+\keyword{models}
+\keyword{hplot}
+
+
+

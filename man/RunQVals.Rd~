@@ -1,0 +1,41 @@
+\name{RunQVals}
+\alias{RunQVals}
+\title{Run qvalue on a resultframe}
+
+\description{For a resultframe produced by \code{RunExonModelWorkflow}, produce a new
+resultframe containing qvalues (FDR adjusted pvalues). }
+
+\usage{
+  RunQVals(resultframe)
+}
+
+\arguments{
+  \item{resultframe}{
+    Valid resultframe (either multi or singles) produced from \code{RunExonModelWorkflow}.  
+  }
+}
+
+\details{
+  \code{RunQVals} produces a dataframe that also contains the qvalues.  
+
+  Note that if \code{qvalue} cannot produce qvalues for that set of pvalues, the function 
+  will return a column of NAs for that set of pvalues, as well as the warning from qvalues.
+}
+
+\seealso{
+  \code{\link{RunExonModelWorkflow}}
+  \code{\link[qvalue]{qvalue}}
+}
+
+\examples{
+  #mouseexonensembl.db package required
+  #load in sample dataset
+  data(exontestdata)
+  results <- RunExonModelWorkflow(TestSetTrans, testTrans, dBPackage="mouseexonensembl.db")
+  #9 out of the 20 transcripts are multiple-exon transcripts
+  mult <- RunQVals(results$multi)
+  mult
+}
+
+\keyword{exon}
+\keyword{analysis}

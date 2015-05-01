@@ -1,0 +1,599 @@
+%\VignetteIndexEntry{exon modeling primer}
+%\VignetteKeywords{Analysis, Affymetrix, exon array}
+%\VignetteDepends{affy, DBI, RSQLite, mouseexonensembl.db, qvalue, Biobase}
+%\VignettePackage{ExonStrainModel}
+\documentclass[12pt]{article}
+
+\usepackage{hyperref}
+\usepackage{amsmath,amssymb,geometry,textcomp}
+
+\textwidth=6.2in
+\textheight=8.5in
+%\parskip=.3cm
+\oddsidemargin=.1in
+\evensidemargin=.1in
+\headheight=-.3in
+
+\newcommand{\scscst}{\scriptscriptstyle}
+\newcommand{\scst}{\scriptstyle}
+
+\newcommand{\Rfunction}[1]{{\texttt{#1}}}
+\newcommand{\Robject}[1]{{\texttt{#1}}}
+\newcommand{\Rpackage}[1]{{\textit{#1}}}
+\newcommand{\Rclass}[1]{{\textit{#1}}}
+
+\usepackage{c:/R/R-2.6.2/share/texmf/Sweave}
+\begin{document}
+\title{ExonStrainModel: simple linear modeling to detect exon-specific strain 
+differences in Affymetrix Exon Array data}
+\author{Ted Laderas}
+
+\maketitle
+\tableofcontents
+
+\section{Introduction}
+
+The package \Rpackage{ExonStrainModel} applies two linear models to Affymetrix Exon 
+Array data in order to detect exon-specific differences in expression between two 
+strains.  Currently, only Mouse Exon Array 1.0 core probesets are supported.
+
+The first linear model applies to multiple-exon transcripts.  For a given transcript 
+or gene, we fit the following linear model:
+
+
+Expression \= Strain + Exon + Subject\%in\%Strain + Exon\:Strain
+
+
+Note the Exon:Strain interaction term.  For a single exon, the model reduces to:
+
+
+Expression \= Strain + Subject\%in\%Strain
+
+
+\Rpackage{ExonStrainModel} applies ANOVA to the fit linear models in an attempt to
+detect differential alternative splicing between strains.  In the case of a multiple-exon
+transcript, we are interested in finding significant p-values for the interaction term
+Exon\:Strain.  In this case, expression is significantly different between the two
+strains for one or more exons.
+
+\Rpackage{ExonStrainModel} also provides tools and metrics based on the Expression Data
+that allow for filtering and stratification such as the position of the exon with
+the largest expression difference between strains as well as visualization of the 
+interaction plots between the two strains.
+
+\section{Implementation Details}
+
+In order to achieve this, an Ensembl-Exon Array mapping (\Rpackage{mouseexonensembl.db}) 
+was built, mapping Ensembl Transcript IDs, Gene IDs, and Exon IDs to probeset 
+boundaries.  A probeset was mapped to a particular entity (exon, transcript, etc) 
+if either the start or end of that probeset was within the boundary of that entity.  
+Note that the mapping is many-to-many: that is, a probeset may be a member of 
+multiple exons, due to transcriptional structure (for example, two separate 
+transcripts belonging to a gene may contain slightly different but overlapping 
+exons).
+
+Note this approach is similar to that taken by the \Rpackage{exonmap} project.
+However, our database package differs in that we only map exonic (not intronic)
+regions, and in implementation (we use a SQLite based database rather than a MySQL
+based database).
+
+
+\section{Preprocessing Exon Array Data}
+
+\Rpackage{ExonStrainModel} uses as input an ExpressionSet and a list of 
+Ensembl Transcript or Gene IDs to do the analysis.  It also requires a phenoData
+object that contains a column called table.
+
+Exon Array CEL files can be loaded by \Rfunction{ReadAffy}, Normalized and Summarized using 
+current Bioconductor tools (use of the annotation packages available at 
+\url{http://xmap.picr.man.ac.uk/download/} are recommended.  We do recommend SNP masking
+any SNPs that are different between the two strains.  For large datasets and computers 
+with limited memory, use of the \Rpackage{aroma.affymetrix} is suggested.
+
+The following script will preprocess, normalize, SNP mask and produce probeset-level 
+summaries for a set of CEL files in the current working directory. 
+
+(Note that the \Rfunction{ReadExon} function from the \Rpackage{exonmap} could also be used as well, 
+provided that an annotation file called {\it covdesc} exists in the working directory.  This
+file should be a space delimited file with a line for each array, and a column called strain
+where each sample is labeled either 1 or 2. For more details, please refer to \Rpackage{exonmap}.)
+
+\begin{Schunk}
+\begin{Sinput}
+> library(mouseexonpmcdf)
+> library(mouseexonensembl.db)
+> library(affy)
+> raw.data <- ReadAffy()
+> raw.data@cdfName <- "mouseexonpmcdf"
+> abatch1 <- bg.correct.rma(raw.data)
+> abatch2 <- normalize.AffyBatch.quantiles(abatch1)
+> mask3 <- function(x, maskfile = "b6vsd2snpmask.txt") {
++     mask <- read.csv(maskfile)
++     probes <- mask[, 2]
++     intensity(x)[probes, ] <- NA
++     return(x)
++ }
+> abatch3 <- mask3(abatch2)
+> eset <- computeExprSet(abatch3, pmcorrect = "pmonly", summary.method = "medianpolish", 
++     summary.param = list(na.rm = TRUE))
+> library(convert)
+> eset <- as(eset, "ExpressionSet")
+> coreprobesets <- getCoreProbesets()
+> eset <- eset[coreprobesets, ]
+\end{Sinput}
+\end{Schunk}
+
+\section{Attaching phenoData to the ExpressionSet} 
+
+To this data file, we need to attach an appropriate phenoData file.  This file is 
+an annotation file where each sample is represented and the strain is annotated.  This 
+annotation file called {\it covdesc} should exists in the working directory.  This
+file should be a space delimited file with a line for each array, and a column called strain
+where each sample is labeled either 1 or 2. For more details, please refer to \Rpackage{exonmap}.)
+
+\begin{Schunk}
+\begin{Sinput}
+> pData <- read.delim("covdesc")
+> phen <- new("AnnotatedDataFrame", data = pData)
+> phenoData(eset) <- phen
+\end{Sinput}
+\end{Schunk}
+
+Alternatively, we can also build a data frame directly in R, based on the sample names.  
+For example, say the first ten samples correspond to strain 1 and the next 10 samples 
+correspond to strain 2.
+
+\begin{Schunk}
+\begin{Sinput}
+> n <- sampleNames(eset)
+> Strain <- c(rep(1, 10), rep(2, 10))
+> names(Strain) <- n
+> pData <- as.data.frame(Strain)
+> phen <- new("AnnotatedDataFrame", data = pData)
+> phenoData(eset) <- phen
+\end{Sinput}
+\end{Schunk}
+
+\section{Analysing the Expression Set for Differential Exon Expression}
+
+Now that we have an appropriate ExpressionSet, the Core Expression probesets can now be analysed for 
+differential exon expression using \Rfunction{RunExonModelWorkflow}.
+
+First we examine the list of Transcript IDs.
+
+\begin{Schunk}
+\begin{Sinput}
+> library(ExonModelStrain)
+\end{Sinput}
+\end{Schunk}
+
+\begin{Schunk}
+\begin{Sinput}
+> load("exontestdata.RData")
+> testTrans
+\end{Sinput}
+\begin{Soutput}
+ [1] "ENSMUST00000086675" "ENSMUST00000025403" "ENSMUST00000079776"
+ [4] "ENSMUST00000089419" "ENSMUST00000062893" "ENSMUST00000079749"
+ [7] "ENSMUST00000026901" "ENSMUST00000100498" "ENSMUST00000008733"
+[10] "ENSMUST00000100538" "ENSMUST00000027090" "ENSMUST00000043863"
+[13] "ENSMUST00000022742" "ENSMUST00000103506" "ENSMUST00000061437"
+[16] "ENSMUST00000079465" "ENSMUST00000081945" "ENSMUST00000060522"
+[19] "ENSMUST00000086552" "ENSMUST00000026743"
+\end{Soutput}
+\end{Schunk}
+
+Now we run the model on the 20 transcripts.  \Rfunction{RunExonStrainModel} is smart enough to know
+to run the single-exon model on single-exon transcripts, and the multiple-exon model on multiple-exon
+transcripts.
+
+\begin{Schunk}
+\begin{Sinput}
+> results <- RunExonModelWorkflow(TestSetTrans, testTrans, dBPackage = "mouseexonensembl.db")
+\end{Sinput}
+\begin{Soutput}
+[1] "running 1 ENSMUST00000086675"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000086675' and target = 1;"
+Analysis of Variance Table
+
+Response: Expression
+               Df  Sum Sq Mean Sq F value  Pr(>F)   
+Strain          1 0.87696 0.87696  9.0564 0.00721 **
+Strain:Subject  1 0.04487 0.04487  0.4634 0.50425   
+Residuals      19 1.83984 0.09683                   
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1 
+[1] "running 2 ENSMUST00000025403"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000025403' and target = 1;"
+Analysis of Variance Table
+
+Response: Expression
+                Df  Sum Sq Mean Sq F value Pr(>F)    
+Strain           1   0.085   0.085  0.1449 0.7038    
+Exon             7 290.618  41.517 70.8784 <2e-16 ***
+Strain:Subject   1   0.013   0.013  0.0223 0.8815    
+Strain:Exon      7   0.710   0.101  0.1731 0.9904    
+Residuals      247 144.680   0.586                   
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1 
+[1] "running 3 ENSMUST00000079776"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000079776' and target = 1;"
+Analysis of Variance Table
+
+Response: Expression
+                Df  Sum Sq Mean Sq F value    Pr(>F)    
+Strain           1   4.555   4.555  8.1065 0.0046914 ** 
+Exon            12 236.176  19.681 35.0287 < 2.2e-16 ***
+Strain:Subject   1   0.006   0.006  0.0109 0.9167299    
+Strain:Exon     12  21.746   1.812  3.2253 0.0002134 ***
+Residuals      325 182.605   0.562                      
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1 
+[1] "running 4 ENSMUST00000089419"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000089419' and target = 1;"
+Analysis of Variance Table
+
+Response: Expression
+               Df  Sum Sq Mean Sq F value Pr(>F)
+Strain          1  0.1440  0.1440  0.6219 0.4333
+Strain:Subject  1  0.0404  0.0404  0.1746 0.6774
+Residuals      63 14.5880  0.2316               
+[1] "running 5 ENSMUST00000062893"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000062893' and target = 1;"
+Analysis of Variance Table
+
+Response: Expression
+                Df  Sum Sq Mean Sq F value  Pr(>F)    
+Strain           1   0.567   0.567  4.2193 0.04028 *  
+Exon            41 298.366   7.277 54.1353 < 2e-16 ***
+Strain:Subject   1   0.217   0.217  1.6179 0.20374    
+Strain:Exon     41   5.247   0.128  0.9521 0.55829    
+Residuals      839 112.784   0.134                    
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1 
+[1] "running 6 ENSMUST00000079749"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000079749' and target = 1;"
+Analysis of Variance Table
+
+Response: Expression
+               Df  Sum Sq Mean Sq F value Pr(>F)
+Strain          1   0.416   0.416  0.1374 0.7128
+Strain:Subject  1   1.301   1.301  0.4296 0.5158
+Residuals      41 124.168   3.028               
+[1] "running 7 ENSMUST00000026901"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000026901' and target = 1;"
+[1] "running 8 ENSMUST00000100498"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000100498' and target = 1;"
+Analysis of Variance Table
+
+Response: Expression
+                Df  Sum Sq Mean Sq F value Pr(>F)    
+Strain           1   0.061   0.061  0.1125 0.7375    
+Exon            12 310.061  25.838 47.2820 <2e-16 ***
+Strain:Subject   1   0.032   0.032  0.0588 0.8086    
+Strain:Exon     12   1.320   0.110  0.2014 0.9984    
+Residuals      457 249.739   0.546                   
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1 
+[1] "running 9 ENSMUST00000008733"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000008733' and target = 1;"
+[1] "running 10 ENSMUST00000100538"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000100538' and target = 1;"
+[1] "running 11 ENSMUST00000027090"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000027090' and target = 1;"
+Analysis of Variance Table
+
+Response: Expression
+               Df Sum Sq Mean Sq F value Pr(>F)
+Strain          1 0.0726  0.0726  0.6799 0.4144
+Strain:Subject  1 0.0281  0.0281  0.2630 0.6108
+Residuals      41 4.3799  0.1068               
+[1] "running 12 ENSMUST00000043863"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000043863' and target = 1;"
+Analysis of Variance Table
+
+Response: Expression
+               Df Sum Sq Mean Sq F value Pr(>F)
+Strain          1  0.113   0.113  0.0698 0.7930
+Strain:Subject  1  0.002   0.002  0.0011 0.9737
+Residuals      41 66.331   1.618               
+[1] "running 13 ENSMUST00000022742"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000022742' and target = 1;"
+Analysis of Variance Table
+
+Response: Expression
+                Df  Sum Sq Mean Sq  F value    Pr(>F)    
+Strain           1    3.36    3.36  20.3832 7.468e-06 ***
+Exon            32 1005.96   31.44 190.8386 < 2.2e-16 ***
+Strain:Subject   1    0.02    0.02   0.1182   0.73109    
+Strain:Exon     32    8.58    0.27   1.6275   0.01672 *  
+Residuals      681  112.18    0.16                       
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1 
+[1] "running 14 ENSMUST00000103506"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000103506' and target = 1;"
+[1] "running 15 ENSMUST00000061437"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000061437' and target = 1;"
+[1] "running 16 ENSMUST00000079465"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000079465' and target = 1;"
+Analysis of Variance Table
+
+Response: Expression
+               Df  Sum Sq Mean Sq F value Pr(>F)
+Strain          1  0.1748  0.1748  0.5434 0.4652
+Strain:Subject  1  0.1112  0.1112  0.3458 0.5597
+Residuals      41 13.1867  0.3216               
+[1] "running 17 ENSMUST00000081945"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000081945' and target = 1;"
+Analysis of Variance Table
+
+Response: Expression
+               Df  Sum Sq Mean Sq  F value    Pr(>F)    
+Strain          1   1.517   1.517  10.4357  0.001803 ** 
+Exon            3 261.788  87.263 600.2768 < 2.2e-16 ***
+Strain:Subject  1   0.036   0.036   0.2484  0.619591    
+Strain:Exon     3   1.191   0.397   2.7307  0.049364 *  
+Residuals      79  11.484   0.145                       
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1 
+[1] "running 18 ENSMUST00000060522"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000060522' and target = 1;"
+Analysis of Variance Table
+
+Response: Expression
+                Df  Sum Sq Mean Sq F value    Pr(>F)    
+Strain           1   4.700   4.700  8.9476 0.0029670 ** 
+Exon            14 245.877  17.563 33.4377 < 2.2e-16 ***
+Strain:Subject   1   0.091   0.091  0.1738 0.6770053    
+Strain:Exon     14  23.236   1.660  3.1600 0.0001054 ***
+Residuals      365 191.711   0.525                      
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1 
+[1] "running 19 ENSMUST00000086552"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000086552' and target = 1;"
+Analysis of Variance Table
+
+Response: Expression
+                Df Sum Sq Mean Sq  F value  Pr(>F)    
+Strain           1   0.25    0.25   0.4461 0.50475    
+Exon            10 779.78   77.98 140.6497 < 2e-16 ***
+Strain:Subject   1   0.56    0.56   1.0077 0.31631    
+Strain:Exon     10  11.05    1.10   1.9922 0.03409 *  
+Residuals      285 158.01    0.55                     
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1 
+[1] "running 20 ENSMUST00000026743"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000026743' and target = 1;"
+Analysis of Variance Table
+
+Response: Expression
+                Df Sum Sq Mean Sq  F value  Pr(>F)    
+Strain           1   1.50    1.50   4.8224 0.02879 *  
+Exon            11 345.63   31.42 100.8945 < 2e-16 ***
+Strain:Subject   1   0.56    0.56   1.8009 0.18053    
+Strain:Exon     11   1.34    0.12   0.3901 0.95954    
+Residuals      327 101.83    0.31                     
+---
+Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1 
+\end{Soutput}
+\begin{Sinput}
+> multres <- results$multi
+> multres
+\end{Sinput}
+\begin{Soutput}
+                  ID      pStrain         pExon  pExonStrain Strain1mean
+1 ENSMUST00000025403 7.038226e-01  1.617089e-55 0.9904341882   3.5752386
+2 ENSMUST00000079776 4.691381e-03  1.600932e-51 0.0002134012   1.0637083
+3 ENSMUST00000062893 4.027615e-02 1.782192e-205 0.5582876948   0.5617597
+4 ENSMUST00000100498 7.374637e-01  2.335685e-72 0.9983835426   5.4771440
+5 ENSMUST00000022742 7.468162e-06 2.049123e-315 0.0167197812   4.9007424
+6 ENSMUST00000081945 1.802556e-03  2.980826e-54 0.0493638544   2.2731364
+7 ENSMUST00000060522 2.966993e-03  7.199816e-57 0.0001054304   1.0145143
+8 ENSMUST00000086552 5.047501e-01 5.418436e-104 0.0340856950   5.5789351
+9 ENSMUST00000026743 2.879357e-02  4.630702e-98 0.9595379504   8.5145395
+  Strain2mean multprobeflag            maxexon maxexondelta position
+1   3.5392338             1 ENSMUSE00000143043    0.2437343        7
+2   1.2921584             1 ENSMUSE00000125970    2.0971999        8
+3   0.6115172             0 ENSMUSE00000497210    0.3844675       21
+4   5.4997791             1 ENSMUSE00000648227    0.2111199        8
+5   4.7661873             1 ENSMUSE00000480826    1.0104467       30
+6   2.5368238             0 ENSMUSE00000549804    0.5789176        4
+7   1.2332985             1 ENSMUSE00000125970    2.0971999        8
+8   5.5220272             1 ENSMUSE00000416166    0.8925565       10
+9   8.3833594             1 ENSMUSE00000152363    0.2271807        5
+  positionflag numexonsmapped trueexonnum missingexonflag strand
+1            0              8           8               0      1
+2            0             13          13               0     -1
+3            0             42          43               1      1
+4            0             13          13               0     -1
+5            0             33          35               1      1
+6            2              4           4               0     -1
+7            0             15          15               0     -1
+8            0             11          11               0     -1
+9            0             12          12               0      1
+\end{Soutput}
+\end{Schunk}
+
+We can also look at the single exon results.
+
+\begin{Schunk}
+\begin{Sinput}
+> sing <- results$singles
+> sing
+\end{Sinput}
+\begin{Soutput}
+                  ID     pStrain Strain1mean Strain2mean numprobesets
+1 ENSMUST00000086675 0.007210388  4.34236794  3.94139946           22
+2 ENSMUST00000089419 0.433317953  0.14176213  0.04795627           66
+3 ENSMUST00000079749 0.712772507  4.50880208  4.31348647           44
+4 ENSMUST00000027090 0.414383236  0.04899534  0.13059337           44
+5 ENSMUST00000043863 0.793019353  8.88451562  8.78280738           44
+6 ENSMUST00000079465 0.465209805  0.49858350  0.37200612           44
+             maxexon maxexondelta numexonsmapped trueexonnum missingexonflag
+1 ENSMUSE00000657256   0.40096848              1           1               0
+2 ENSMUSE00000558095   0.09380586              1           1               0
+3 ENSMUSE00000464585   0.19531561              1           1               0
+4 ENSMUSE00000354677   0.08159804              1           1               0
+5 ENSMUSE00000352751   0.10170824              1           1               0
+6 ENSMUSE00000464194   0.12657738              1           1               0
+  strand
+1      1
+2      1
+3      1
+4      1
+5      1
+6      1
+\end{Soutput}
+\end{Schunk}
+
+Finally, we can get a list of those transcripts that were not modeled.  These 
+transcripts may not have the representative probesets that exist in our data.
+<
+
+\section{Adjusting for Multiple Comparisons}
+
+A convenience function, \Rfunction{RunQVals} is provided to adjust the p-values for 
+multiple comparison.  \Rfunction{RunQVals} utilizes the \Rpackage{qvalue} in order
+to adjust the p-values for False Discovery Rate (FDR).  In our example, qvalue
+cannot estimate the pi0 term of the raw Exon p-values and thus returns a null
+column for the qvalues.
+
+\begin{Schunk}
+\begin{Sinput}
+> multqv <- RunQVals(multres)
+\end{Sinput}
+\begin{Soutput}
+[1] "ERROR: The estimated pi0 <= 0. Check that you have valid p-values or use another lambda method."
+[1] "qvalues could not be calculated for pExon"
+\end{Soutput}
+\begin{Sinput}
+> multqv
+\end{Sinput}
+\begin{Soutput}
+    resultframe[, 1]      pStrain         pExon  pExonStrain      qStrain qExon
+1 ENSMUST00000025403 7.038226e-01  1.617089e-55 0.9904341882 3.559670e-02    NA
+2 ENSMUST00000079776 4.691381e-03  1.600932e-51 0.0002134012 5.095095e-04    NA
+3 ENSMUST00000062893 4.027615e-02 1.782192e-205 0.5582876948 2.916139e-03    NA
+4 ENSMUST00000100498 7.374637e-01  2.335685e-72 0.9983835426 3.559670e-02    NA
+5 ENSMUST00000022742 7.468162e-06 2.049123e-315 0.0167197812 3.244332e-06    NA
+6 ENSMUST00000081945 1.802556e-03  2.980826e-54 0.0493638544 3.915347e-04    NA
+7 ENSMUST00000060522 2.966993e-03  7.199816e-57 0.0001054304 4.296421e-04    NA
+8 ENSMUST00000086552 5.047501e-01 5.418436e-104 0.0340856950 3.132492e-02    NA
+9 ENSMUST00000026743 2.879357e-02  4.630702e-98 0.9595379504 2.501711e-03    NA
+   qExonStrain Strain1mean Strain2mean multprobeflag            maxexon
+1 0.9983835426   3.5752386   3.5392338             1 ENSMUSE00000143043
+2 0.0009603056   1.0637083   1.2921584             1 ENSMUSE00000125970
+3 0.8374315421   0.5617597   0.6115172             0 ENSMUSE00000497210
+4 0.9983835426   5.4771440   5.4997791             1 ENSMUSE00000648227
+5 0.0501593435   4.9007424   4.7661873             1 ENSMUSE00000480826
+6 0.0888549379   2.2731364   2.5368238             0 ENSMUSE00000549804
+7 0.0009488738   1.0145143   1.2332985             1 ENSMUSE00000125970
+8 0.0766928137   5.5789351   5.5220272             1 ENSMUSE00000416166
+9 0.9983835426   8.5145395   8.3833594             1 ENSMUSE00000152363
+  maxexondelta position positionflag numexonsmapped trueexonnum missingexonflag
+1    0.2437343        7            0              8           8               0
+2    2.0971999        8            0             13          13               0
+3    0.3844675       21            0             42          43               1
+4    0.2111199        8            0             13          13               0
+5    1.0104467       30            0             33          35               1
+6    0.5789176        4            2              4           4               0
+7    2.0971999        8            0             15          15               0
+8    0.8925565       10            0             11          11               0
+9    0.2271807        5            0             12          12               0
+  strand
+1      1
+2     -1
+3      1
+4     -1
+5      1
+6     -1
+7     -1
+8     -1
+9      1
+\end{Soutput}
+\end{Schunk}
+
+\section{Filtering the Result Sets}
+
+Say we are interested in finding Strain-specific Exon interactions.  We can find possible 
+interactions by filtering our resulting dataframe.
+
+\begin{Schunk}
+\begin{Sinput}
+> attach(multqv)
+> sig <- multqv[qExonStrain < 0.05, ]
+> detach(multqv)
+> sig
+\end{Sinput}
+\begin{Soutput}
+    resultframe[, 1]     pStrain        pExon  pExonStrain      qStrain qExon
+2 ENSMUST00000079776 0.004691381 1.600932e-51 0.0002134012 0.0005095095    NA
+7 ENSMUST00000060522 0.002966993 7.199816e-57 0.0001054304 0.0004296421    NA
+   qExonStrain Strain1mean Strain2mean multprobeflag            maxexon
+2 0.0009603056    1.063708    1.292158             1 ENSMUSE00000125970
+7 0.0009488738    1.014514    1.233299             1 ENSMUSE00000125970
+  maxexondelta position positionflag numexonsmapped trueexonnum missingexonflag
+2       2.0972        8            0             13          13               0
+7       2.0972        8            0             15          15               0
+  strand
+2     -1
+7     -1
+\end{Soutput}
+\end{Schunk}
+
+Here we see two transcripts with significant exon/strain interaction terms.
+
+There are other flags that exist in the resulting data frame that can be used to further stratify/filter
+the data. For example, \Rfunction{multprobeflag} is a flag that indicates whether there is at least one exon 
+in the transcript that has multiple mapped probesets.  \Rfunction{missingexonflag} indicates whether
+there are exons in the transcript that are not mapped to the data.  \Rfunction{MissingExons} will return
+a list of exons not currently mapped to the data.
+
+For more details, refer to \Rfunction{RunExonModelWorkflow}.
+
+\section{Plotting the Result Sets}
+
+We have two possible transcripts with exon/strain interactions.  We should now examine the 
+interaction plots to see whether these exon specific differences.
+
+Note that these plots may not be representative of all exons in a transcript.  That is,
+if no probesets exist in the ExpressionSet that map to an exon, that exon is not
+represented in the graph.  To get a list of missing exons for a transcript, please refer to
+\Rfunction{MissingExons}.
+
+There are two ways to plot these results.  The first is to plot by id.
+
+\begin{Schunk}
+\begin{Sinput}
+> PlotExon("ENSMUST00000079776", ExpSet = TestSetTrans)
+\end{Sinput}
+\end{Schunk}
+
+\includegraphics{example.png}
+
+Note the large expression difference between the two strains at Exon ENMUSE00000125970.
+
+Or, if we have a large number of significant results, we can save the plots in the working directory
+for later examination.  These plots are named automatically, by gene symbol + ID (for example, 
+
+\begin{Schunk}
+\begin{Sinput}
+> PlotExonResults(sig, ExpSet = TestSetTrans, savePlot = TRUE)
+\end{Sinput}
+\begin{Soutput}
+[1] "ENSMUST00000079776"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000079776' and target = 1;"
+[1] "plot is available as C:/R/R-2.6.2/bin/ExonModelStrain/inst/doc/Oc90-ENSMUST00000079776.exon.plot.png"
+[1] "ENSMUST00000060522"
+[1] "select * from probe2ensembl WHERE EnsemblTranscriptID = 'ENSMUST00000060522' and target = 1;"
+[1] "plot is available as C:/R/R-2.6.2/bin/ExonModelStrain/inst/doc/Oc90-ENSMUST00000060522.exon.plot.png"
+\end{Soutput}
+\end{Schunk}
+
+\end{document}
+
+
+
+
+
+

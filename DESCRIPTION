@@ -1,0 +1,17 @@
+Package: ExonModelStrain
+Title: Strain Specific Exon Modeling
+Description: Functions to model strain/exon interactions between strains.
+Version: 0.1.5
+Author: Ted Laderas
+Maintainer: Ted Laderas <laderast@ohsu.edu>
+Depends: R (>= 2.8.1), qvalue, Biobase, sciplot, affy, DBI
+Suggests: exonmap, mouseexonensembl.db
+Imports: 
+License: The Artistic License, Version 2.0
+organism: 
+species: House Mouse
+manufacturer: Affymetrix
+chipName: Mouse Exon 1.0
+manufacturerUrl: 
+http://www.affymetrix.com/support/technical/byproduct.affx?product=moexon-st
+biocViews: AffymetrixChip, Mus_musculus
